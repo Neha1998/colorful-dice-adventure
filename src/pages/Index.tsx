@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import GameBoard from '@/components/GameBoard';
 import DiceRoller from '@/components/DiceRoller';
@@ -64,19 +65,16 @@ const Index = () => {
   }, []);
 
   const generatePath = (startPosition: number, endPosition: number): number[] => {
+    // Create a sequential path from start to end position
     const path: number[] = [];
-    let currentPos = startPosition;
     
-    while (currentPos !== endPosition) {
-      path.push(currentPos);
-      if (currentPos < endPosition) {
-        currentPos += 1;
-      } else {
-        currentPos -= 1;
-      }
+    // Determine direction (forward or backward)
+    const direction = startPosition < endPosition ? 1 : -1;
+    
+    // Generate each step in the path
+    for (let pos = startPosition; direction > 0 ? pos <= endPosition : pos >= endPosition; pos += direction) {
+      path.push(pos);
     }
-    
-    path.push(endPosition);
     
     return path;
   };
@@ -85,24 +83,48 @@ const Index = () => {
     setAnimationInProgress(true);
     setAnimatingPlayerId(playerId);
     
+    // Generate path from start to end position
     const movementPath = generatePath(startPosition, endPosition);
     setCurrentPath(movementPath);
     
-    const animationTime = movementPath.length * 200;
-    
-    await new Promise(resolve => setTimeout(resolve, animationTime));
-    
-    const updatedPlayers = players.map(player => {
-      if (player.id === playerId) {
-        return { ...player, position: endPosition };
+    // Animate through each position in the path
+    // We'll move block by block with delays
+    for (let i = 0; i < movementPath.length; i++) {
+      const currentPos = movementPath[i];
+      
+      // Update the player's position for each step
+      if (i > 0) { // Skip the starting position
+        const updatedPlayers = players.map(player => {
+          if (player.id === playerId) {
+            return { ...player, position: currentPos };
+          }
+          return player;
+        });
+        
+        setPlayers(updatedPlayers);
+        
+        // Play move sound for each step
+        if (moveAudioRef.current && i > 0) {
+          moveAudioRef.current.currentTime = 0;
+          moveAudioRef.current.play().catch(e => console.log("Audio play failed:", e));
+        }
+        
+        // Wait for the animation to complete before moving to the next position
+        await new Promise(resolve => setTimeout(resolve, 250));
       }
-      return player;
-    });
+    }
     
-    setPlayers(updatedPlayers);
+    // Final position reached, check for points
+    const finalPlayers = [...players];
+    const updatedPlayer = finalPlayers.find(p => p.id === playerId);
+    if (updatedPlayer) {
+      updatedPlayer.position = endPosition;
+    }
     
-    checkForPoints(updatedPlayers, endPosition);
+    setPlayers(finalPlayers);
+    checkForPoints(finalPlayers, endPosition);
     
+    // Reset animation states
     setTimeout(() => {
       setAnimatingPlayerId(null);
       setCurrentPath([]);
@@ -110,11 +132,12 @@ const Index = () => {
       setLastPosition(null);
       setAnimationInProgress(false);
       
+      // Move to next player after a delay
       setTimeout(() => {
         if (!winner) {
           nextPlayer();
         }
-      }, 1000);
+      }, 500);
     }, 500);
   };
 
@@ -130,11 +153,6 @@ const Index = () => {
     setLastPosition(currentPlayer.position);
     setMovingPlayerId(currentPlayer.id);
     
-    if (moveAudioRef.current) {
-      moveAudioRef.current.currentTime = 0;
-      moveAudioRef.current.play().catch(e => console.log("Audio play failed:", e));
-    }
-    
     let newPosition = currentPlayer.position + value;
     
     if (newPosition >= TOTAL_TILES) {
@@ -142,6 +160,7 @@ const Index = () => {
       toast(`${currentPlayer.name} reached the end of the board!`);
     }
     
+    // Start the animation
     animateMovement(currentPlayer.id, currentPlayer.position, newPosition);
   };
   

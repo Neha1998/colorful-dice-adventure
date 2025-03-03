@@ -126,7 +126,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
               <PlayerAvatar 
                 color={player.color} 
                 isActive={player.id === currentPlayerId}
-                size={playersOnTile.length > 2 ? "sm" : "md"}
+                size={playersOnTile.length > 2 ? "sm" : (playersOnTile.length > 1 ? "md" : "md")}
                 name=""
               />
             </div>
