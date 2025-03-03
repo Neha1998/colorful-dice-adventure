@@ -3,6 +3,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { Player } from './ScoreCard';
 import PlayerAvatar from './PlayerAvatar';
+import { Crown } from 'lucide-react';
 
 interface GameBoardProps {
   boardSize: number;
@@ -12,6 +13,9 @@ interface GameBoardProps {
   movingPlayerId?: number | null;
   lastPosition?: number | null;
   scoreAnimation?: number | null;
+  winner?: Player | null;
+  animatingPlayerId?: number | null;
+  currentPath?: number[];
 }
 
 // Define the possible tile colors
@@ -24,7 +28,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
   onTileClick,
   movingPlayerId = null,
   lastPosition = null,
-  scoreAnimation = null
+  scoreAnimation = null,
+  winner = null,
+  animatingPlayerId = null,
+  currentPath = []
 }) => {
   // Create a board with a pattern of colors
   const generateColorPattern = (size: number): TileColor[] => {
@@ -73,20 +80,30 @@ const GameBoard: React.FC<GameBoardProps> = ({
     return (
       <div className={cn(
         "absolute inset-0 flex items-center justify-center",
-        playersOnTile.length > 1 ? "flex-wrap" : ""
+        playersOnTile.length > 1 ? "flex-wrap gap-1" : ""
       )}>
         {playersOnTile.map((player, index) => {
           const isMoving = player.id === movingPlayerId;
           const isPreviousPosition = position === lastPosition && player.id === movingPlayerId;
           const playerScored = player.id === scoreAnimation;
+          const isAnimating = player.id === animatingPlayerId && currentPath.includes(position);
+          const isInPath = player.id === animatingPlayerId && currentPath.includes(position);
+          const isPathEnd = player.id === animatingPlayerId && position === currentPath[currentPath.length - 1];
           
-          // Calculate staggered positions for multiple players
-          const offset = playersOnTile.length > 1 
-            ? (index % 2 === 0 ? -6 : 6) // Horizontal offset
-            : 0;
-          const verticalOffset = playersOnTile.length > 2 
-            ? (Math.floor(index / 2) % 2 === 0 ? -6 : 6) // Vertical offset for 3+ players
-            : 0;
+          // Calculate grid positions for multiple players
+          // For 2 players: side by side
+          // For 3-4 players: 2x2 grid
+          let offsetX = 0;
+          let offsetY = 0;
+          
+          if (playersOnTile.length === 2) {
+            // Two players side by side
+            offsetX = index === 0 ? -8 : 8;
+          } else if (playersOnTile.length >= 3) {
+            // Grid format (2x2)
+            offsetX = index % 2 === 0 ? -8 : 8;
+            offsetY = Math.floor(index / 2) === 0 ? -8 : 8;
+          }
           
           return (
             <div 
@@ -96,17 +113,20 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 isMoving ? "animate-hop z-20" : "",
                 isPreviousPosition ? "animate-fade-out" : "",
                 playerScored ? "animate-bounce-score z-30" : "",
-                playersOnTile.length > 1 ? "scale-90" : "translate-y-1"
+                isPathEnd ? "animate-hop z-20" : "",
+                isInPath && !isPathEnd ? "animate-pulse-scale" : "",
+                playersOnTile.length > 1 ? "scale-90" : ""
               )}
               style={{ 
-                transform: `translate(${offset}px, ${verticalOffset + 4}px)`,
-                zIndex: isMoving ? 20 : 10 
+                transform: `translate(${offsetX}px, ${offsetY}px)`,
+                zIndex: isMoving || isAnimating ? 20 : 10,
+                transitionDelay: isAnimating ? `${currentPath.indexOf(position) * 0.2}s` : '0s'
               }}
             >
               <PlayerAvatar 
                 color={player.color} 
                 isActive={player.id === currentPlayerId}
-                size="sm"
+                size={playersOnTile.length > 2 ? "sm" : "md"}
                 name=""
               />
             </div>
@@ -162,6 +182,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
         const position = boardArray[row][col];
         const color = colorPattern[position];
         const isScoreAnimationTile = players.some(p => p.id === scoreAnimation && p.position === position);
+        const isWinningTile = winner && winner.position === position;
+        const isPathTile = currentPath.includes(position);
         
         tiles.push(
           <div key={position} className="relative">
@@ -171,11 +193,21 @@ const GameBoard: React.FC<GameBoardProps> = ({
                 getTileColorClass(color),
                 getBorderColorClass(color),
                 isScoreAnimationTile ? "animate-tile-pulse" : "",
+                isPathTile ? "ring-2 ring-white ring-opacity-50" : "",
+                isWinningTile ? "ring-4 ring-amber-500 shadow-lg" : "",
                 "cursor-pointer hover:shadow-md transition-all"
               )}
               onClick={() => onTileClick?.(position)}
             >
               <span className="text-xs font-medium text-gray-600 opacity-70 z-10">{position + 1}</span>
+              
+              {/* Winner crown */}
+              {isWinningTile && (
+                <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 animate-float z-30">
+                  <Crown className="h-6 w-6 text-amber-500 drop-shadow-md" />
+                </div>
+              )}
+              
               {renderPlayerOnTile(position)}
               
               {/* Score animation overlay */}

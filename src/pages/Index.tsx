@@ -4,6 +4,7 @@ import DiceRoller from '@/components/DiceRoller';
 import ScoreCard from '@/components/ScoreCard';
 import { Player } from '@/components/ScoreCard';
 import GameControls from '@/components/GameControls';
+import PlayerAvatar from '@/components/PlayerAvatar';
 import { toast } from 'sonner';
 import { Sparkles } from 'lucide-react';
 
@@ -33,12 +34,14 @@ const Index = () => {
   const [lastPosition, setLastPosition] = useState<number | null>(null);
   const [scoreAnimation, setScoreAnimation] = useState<number | null>(null);
   
-  // Sound references
+  const [animatingPlayerId, setAnimatingPlayerId] = useState<number | null>(null);
+  const [currentPath, setCurrentPath] = useState<number[]>([]);
+  const [animationInProgress, setAnimationInProgress] = useState<boolean>(false);
+  
   const moveAudioRef = useRef<HTMLAudioElement | null>(null);
   const scoreAudioRef = useRef<HTMLAudioElement | null>(null);
   const winAudioRef = useRef<HTMLAudioElement | null>(null);
   
-  // Generate a random board pattern once at the beginning
   const [boardPattern] = useState<string[]>(() => {
     const pattern: string[] = [];
     for (let i = 0; i < TOTAL_TILES; i++) {
@@ -49,12 +52,10 @@ const Index = () => {
   });
 
   useEffect(() => {
-    // Initialize audio elements
     moveAudioRef.current = new Audio('/move.mp3');
     scoreAudioRef.current = new Audio('/score.mp3');
     winAudioRef.current = new Audio('/win.mp3');
     
-    // Clean up audio elements on unmount
     return () => {
       moveAudioRef.current = null;
       scoreAudioRef.current = null;
@@ -62,9 +63,63 @@ const Index = () => {
     };
   }, []);
 
-  // Handle dice roll
+  const generatePath = (startPosition: number, endPosition: number): number[] => {
+    const path: number[] = [];
+    let currentPos = startPosition;
+    
+    while (currentPos !== endPosition) {
+      path.push(currentPos);
+      if (currentPos < endPosition) {
+        currentPos += 1;
+      } else {
+        currentPos -= 1;
+      }
+    }
+    
+    path.push(endPosition);
+    
+    return path;
+  };
+  
+  const animateMovement = async (playerId: number, startPosition: number, endPosition: number) => {
+    setAnimationInProgress(true);
+    setAnimatingPlayerId(playerId);
+    
+    const movementPath = generatePath(startPosition, endPosition);
+    setCurrentPath(movementPath);
+    
+    const animationTime = movementPath.length * 200;
+    
+    await new Promise(resolve => setTimeout(resolve, animationTime));
+    
+    const updatedPlayers = players.map(player => {
+      if (player.id === playerId) {
+        return { ...player, position: endPosition };
+      }
+      return player;
+    });
+    
+    setPlayers(updatedPlayers);
+    
+    checkForPoints(updatedPlayers, endPosition);
+    
+    setTimeout(() => {
+      setAnimatingPlayerId(null);
+      setCurrentPath([]);
+      setMovingPlayerId(null);
+      setLastPosition(null);
+      setAnimationInProgress(false);
+      
+      setTimeout(() => {
+        if (!winner) {
+          nextPlayer();
+        }
+      }, 1000);
+    }, 500);
+  };
+
   const handleDiceRoll = (value: number) => {
-    if (!gameStarted || winner) return;
+    if (!gameStarted || winner || animationInProgress) return;
     
     setCurrentRoll(value);
     setCurrentPlayerRolled(true);
@@ -72,77 +127,38 @@ const Index = () => {
     const currentPlayer = players.find(p => p.id === currentPlayerId);
     if (!currentPlayer) return;
     
-    // Store the last position for animation
     setLastPosition(currentPlayer.position);
     setMovingPlayerId(currentPlayer.id);
     
-    // Play move sound
     if (moveAudioRef.current) {
       moveAudioRef.current.currentTime = 0;
       moveAudioRef.current.play().catch(e => console.log("Audio play failed:", e));
     }
     
-    // Calculate the new position
     let newPosition = currentPlayer.position + value;
     
-    // Check if player has reached the end of the board
     if (newPosition >= TOTAL_TILES) {
       newPosition = TOTAL_TILES - 1;
       toast(`${currentPlayer.name} reached the end of the board!`);
     }
     
-    // Update player position with delay for animation
-    setTimeout(() => {
-      // Update player position
-      const updatedPlayers = players.map(player => {
-        if (player.id === currentPlayerId) {
-          return { 
-            ...player, 
-            position: newPosition 
-          };
-        }
-        return player;
-      });
-      
-      setPlayers(updatedPlayers);
-      
-      // Check if the player landed on a tile that matches their color
-      checkForPoints(updatedPlayers, newPosition);
-      
-      // Reset movement animation after a delay
-      setTimeout(() => {
-        setMovingPlayerId(null);
-        setLastPosition(null);
-      }, 500);
-      
-      // Auto-select next player after a delay
-      setTimeout(() => {
-        if (!winner) {
-          nextPlayer();
-        }
-      }, 1500);
-    }, 600);
+    animateMovement(currentPlayer.id, currentPlayer.position, newPosition);
   };
   
-  // Check if the player has landed on a tile that matches their color
   const checkForPoints = (updatedPlayers: Player[], position: number) => {
     const currentPlayer = updatedPlayers.find(p => p.id === currentPlayerId);
     if (!currentPlayer) return;
     
     const tileColor = boardPattern[position];
     
-    // If the tile color matches the player's color, add points
     if (tileColor === currentPlayer.color) {
-      // Activate score animation
       setScoreAnimation(currentPlayer.id);
       
-      // Play score sound
       if (scoreAudioRef.current) {
         scoreAudioRef.current.currentTime = 0;
         scoreAudioRef.current.play().catch(e => console.log("Audio play failed:", e));
       }
       
-      // Award 10 points for matching colors
       const finalPlayers = updatedPlayers.map(player => {
         if (player.id === currentPlayerId) {
           const newScore = player.score + 10;
@@ -151,12 +167,10 @@ const Index = () => {
             description: 'Color match bonus!',
           });
           
-          // Check for winner
           if (newScore >= WINNING_SCORE) {
             setTimeout(() => {
               setWinner(player);
               
-              // Play win sound
               if (winAudioRef.current) {
                 winAudioRef.current.play().catch(e => console.log("Audio play failed:", e));
               }
@@ -175,18 +189,15 @@ const Index = () => {
       
       setPlayers(finalPlayers);
       
-      // Reset score animation after a delay
       setTimeout(() => {
         setScoreAnimation(null);
       }, 1000);
     }
   };
 
-  // Move to the next player's turn
   const nextPlayer = () => {
     if (!gameStarted || winner) return;
     
-    // Find the next player in the rotation
     const currentIndex = players.findIndex(p => p.id === currentPlayerId);
     const nextIndex = (currentIndex + 1) % players.length;
     const nextPlayerId = players[nextIndex].id;
@@ -196,14 +207,12 @@ const Index = () => {
     setCurrentRoll(null);
   };
 
-  // Start the game
   const startGame = () => {
     setGameStarted(true);
     setWinner(null);
     toast.success('Game started! Roll the dice to begin.');
   };
 
-  // Reset the game
   const resetGame = () => {
     setPlayers(initialPlayers);
     setCurrentPlayerId(1);
@@ -214,6 +223,9 @@ const Index = () => {
     setMovingPlayerId(null);
     setLastPosition(null);
     setScoreAnimation(null);
+    setAnimatingPlayerId(null);
+    setCurrentPath([]);
+    setAnimationInProgress(false);
     toast.info('Game reset. Ready to start a new game!');
   };
 
@@ -228,7 +240,6 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8 px-4">
-      {/* Audio elements */}
       <audio id="move-sound" src="/move.mp3" preload="auto"></audio>
       <audio id="score-sound" src="/score.mp3" preload="auto"></audio>
       <audio id="win-sound" src="/win.mp3" preload="auto"></audio>
@@ -244,7 +255,6 @@ const Index = () => {
           </p>
         </div>
         
-        {/* Winner overlay */}
         {winner && (
           <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
             <div className="bg-white rounded-xl p-6 shadow-2xl animate-pop-in max-w-lg w-full mx-4 relative overflow-hidden">
@@ -285,7 +295,6 @@ const Index = () => {
         )}
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left sidebar */}
           <div className="lg:col-span-3 space-y-6">
             <ScoreCard 
               players={players} 
@@ -303,7 +312,6 @@ const Index = () => {
             />
           </div>
           
-          {/* Main game board */}
           <div className="lg:col-span-6 flex justify-center">
             <GameBoard 
               boardSize={BOARD_SIZE}
@@ -312,15 +320,17 @@ const Index = () => {
               movingPlayerId={movingPlayerId}
               lastPosition={lastPosition}
               scoreAnimation={scoreAnimation}
+              winner={winner}
+              animatingPlayerId={animatingPlayerId}
+              currentPath={currentPath}
             />
           </div>
           
-          {/* Right sidebar - Dice roller */}
           <div className="lg:col-span-3 flex justify-center">
             <div className="bg-white rounded-2xl shadow-lg p-5 w-full game-card border border-gray-100">
               <DiceRoller 
                 onRoll={handleDiceRoll} 
-                disabled={!gameStarted || currentPlayerRolled || winner !== null}
+                disabled={!gameStarted || currentPlayerRolled || winner !== null || animationInProgress}
               />
               
               {currentRoll !== null && (
