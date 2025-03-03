@@ -9,6 +9,9 @@ interface GameBoardProps {
   players: Player[];
   currentPlayerId: number;
   onTileClick?: (position: number) => void;
+  movingPlayerId?: number | null;
+  lastPosition?: number | null;
+  scoreAnimation?: number | null;
 }
 
 // Define the possible tile colors
@@ -18,7 +21,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
   boardSize,
   players,
   currentPlayerId,
-  onTileClick
+  onTileClick,
+  movingPlayerId = null,
+  lastPosition = null,
+  scoreAnimation = null
 }) => {
   // Create a board with a pattern of colors
   const generateColorPattern = (size: number): TileColor[] => {
@@ -67,18 +73,45 @@ const GameBoard: React.FC<GameBoardProps> = ({
     return (
       <div className={cn(
         "absolute inset-0 flex items-center justify-center",
-        playersOnTile.length > 1 ? "-space-x-2" : ""
+        playersOnTile.length > 1 ? "flex-wrap" : ""
       )}>
-        {playersOnTile.map((player) => (
-          <div key={player.id} className="transform translate-y-1 animate-appear">
-            <PlayerAvatar 
-              color={player.color} 
-              isActive={player.id === currentPlayerId}
-              size="sm"
-              name=""
-            />
-          </div>
-        ))}
+        {playersOnTile.map((player, index) => {
+          const isMoving = player.id === movingPlayerId;
+          const isPreviousPosition = position === lastPosition && player.id === movingPlayerId;
+          const playerScored = player.id === scoreAnimation;
+          
+          // Calculate staggered positions for multiple players
+          const offset = playersOnTile.length > 1 
+            ? (index % 2 === 0 ? -6 : 6) // Horizontal offset
+            : 0;
+          const verticalOffset = playersOnTile.length > 2 
+            ? (Math.floor(index / 2) % 2 === 0 ? -6 : 6) // Vertical offset for 3+ players
+            : 0;
+          
+          return (
+            <div 
+              key={player.id} 
+              className={cn(
+                "transform transition-all duration-500 ease-bounce",
+                isMoving ? "animate-hop z-20" : "",
+                isPreviousPosition ? "animate-fade-out" : "",
+                playerScored ? "animate-bounce-score z-30" : "",
+                playersOnTile.length > 1 ? "scale-90" : "translate-y-1"
+              )}
+              style={{ 
+                transform: `translate(${offset}px, ${verticalOffset + 4}px)`,
+                zIndex: isMoving ? 20 : 10 
+              }}
+            >
+              <PlayerAvatar 
+                color={player.color} 
+                isActive={player.id === currentPlayerId}
+                size="sm"
+                name=""
+              />
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -128,20 +161,29 @@ const GameBoard: React.FC<GameBoardProps> = ({
       for (let col = 0; col < boardSize; col++) {
         const position = boardArray[row][col];
         const color = colorPattern[position];
+        const isScoreAnimationTile = players.some(p => p.id === scoreAnimation && p.position === position);
         
         tiles.push(
           <div key={position} className="relative">
             <div
               className={cn(
-                "game-tile w-16 h-16 md:w-20 md:h-20 rounded-lg m-1 flex items-center justify-center shadow-sm border-2",
+                "game-tile w-16 h-16 md:w-20 md:h-20 rounded-lg m-1 flex items-center justify-center shadow-sm border-2 relative overflow-visible",
                 getTileColorClass(color),
                 getBorderColorClass(color),
-                "cursor-pointer hover:shadow-md"
+                isScoreAnimationTile ? "animate-tile-pulse" : "",
+                "cursor-pointer hover:shadow-md transition-all"
               )}
               onClick={() => onTileClick?.(position)}
             >
               <span className="text-xs font-medium text-gray-600 opacity-70 z-10">{position + 1}</span>
               {renderPlayerOnTile(position)}
+              
+              {/* Score animation overlay */}
+              {isScoreAnimationTile && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-lg font-bold text-white animate-score-float z-30">+10</div>
+                </div>
+              )}
             </div>
           </div>
         );
